@@ -47,7 +47,7 @@ table.grid.dur input{width:56px;padding:4px 2px;font-size:13px}
 .view{display:none}.view.on{display:block}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
 label.lbl{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 8px}
-input[type=text],input[type=search],select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%}
+input[type=text],input[type=search],input[type=password],select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%}
 input:focus,select:focus{outline:2px solid var(--brand);outline-offset:-1px}
 button.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:8px;cursor:pointer}
 button.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
@@ -142,6 +142,17 @@ table.grid td.wrap input{width:100%;min-width:150px;text-align:left}
 .banner{background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-weight:600}
 .hist{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
 .hist td{padding:6px 4px;border-bottom:1px solid var(--line)}
+.kd{font-size:13px;color:var(--muted);margin-top:2px}
+.kalt{margin-top:8px;font-size:13px;background:var(--card);border-radius:6px;padding:6px 8px}
+table.grid.kin td,table.grid.kin th{text-align:center}
+table.grid.kin td.rh{text-align:left}
+table.grid.kin input{width:70px;text-align:center;padding:4px}
+table.grid.kin select{width:auto;padding:4px 6px;font-size:13px}
+td.muted{color:var(--muted)}
+.kcat{display:grid;grid-template-columns:1fr 80px 110px auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.kcat:last-child{border-bottom:0}
+.kalted{display:grid;grid-template-columns:1fr 70px 100px auto;gap:6px;margin-top:6px}
+.kform{display:grid;grid-template-columns:1fr 90px 120px;gap:8px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:8px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9}
 .toast.on{opacity:1}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:8;padding:16px}
@@ -195,6 +206,7 @@ table.grid td.wrap input{width:100%;min-width:150px;text-align:left}
     <div class="seg" id="tSeg">
       <button data-t="dur" class="on">Duraciones</button>
       <button data-t="pre">Prendas</button>
+      <button data-t="kin">Kinesiología</button>
     </div>
     <input type="search" id="tSearch" placeholder="Buscar…">
     <label class="switch"><input type="checkbox" id="tEdit"> Modo edición</label>
@@ -248,6 +260,13 @@ table.grid td.wrap input{width:100%;min-width:150px;text-align:left}
       <label class="switch" style="margin-top:12px;font-weight:500"><input type="checkbox" id="cpOver"> Sobrescribir duraciones que ya tienen dato</label>
       <div id="cpPrev" style="margin:12px 0"></div>
       <button class="btn pri" id="cpGo">Copiar</button>
+    </div>
+    <div class="card">
+      <label class="lbl">Kinesiología — categorías</label>
+      <p class="hint" style="margin-top:0">Si cambias un valor aquí, se recalculan todos los procedimientos de esa categoría (salvo los que tienen precio especial).</p>
+      <div class="kcat hint" style="border:0;padding-bottom:0"><span>Nombre</span><span>Min/sesión</span><span>Valor sesión</span><span></span></div>
+      <div id="kcatList"></div>
+      <div class="row" style="margin-top:12px"><button class="btn" id="addKcat">+ Agregar categoría</button></div>
     </div>
     <div class="card">
       <label class="lbl">Grupos de prendas</label>
@@ -310,7 +329,39 @@ const SB_KEY = 'sb_publishable_VQ5W9NsK23lzaWR74SRB_Q_zSjrC7oM';
 const KEY = 'guia-cirugias-cache';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 let USER = null, VER = 0, dirty = false, pushing = false, pushT = null, retryT = null;
-const VACIO = () => ({v:1, doctores:[], grupos:[], procedimientos:[], duraciones:{}, prendas:{}, catalogo:[]});
+const VACIO = () => ({v:1, doctores:[], grupos:[], procedimientos:[], duraciones:{}, prendas:{}, catalogo:[], kineCats:[]});
+const KCATS_DEF = [{id:'simple',nombre:'Simple',min:40,valor:40000},{id:'intermedia',nombre:'Intermedia',min:60,valor:50000},{id:'compleja',nombre:'Compleja',min:80,valor:60000}];
+const money = n => '$' + Math.round(+n||0).toLocaleString('es-CL');
+function kineDefault(nombre){
+  const n = norm(nombre).replace(/\s+/g,' ').trim();
+  const K=(cat,ses,extra)=>Object.assign({estado:'ok',cat,ses,valor:null,nota:'',alt:[]},extra||{});
+  if(/^blefaroplastia/.test(n) || /lipoma|ninfoplastia|otoplastia|cicatriz/.test(n)) return {estado:'ninguna'};
+  if(/^lifting/.test(n) || n==='braquioplastia') return K('simple',10);
+  if(/^rino/.test(n)) return K('simple',3);
+  if(['ginecomastia','aumento mamario','mastopexia','reduccion mamaria'].includes(n)) return K('simple',8);
+  if(n.startsWith('campana guatita')) return K('intermedia',10,{valor:40000,nota:'Campaña GD'});
+  if(n==='abdominoplastia') return K('intermedia',10,{alt:[{nombre:'Bono PAD',ses:5,valor:30000}]});
+  if(n==='lipoaspiracion menor' || n==='abdominoplastia + lipo menor') return K('intermedia',10);
+  if(n.includes('+') || /lipoaspiracion (media|mayor)|flor de liz/.test(n)) return K('compleja',10);
+  return {estado:'pendiente'};
+}
+function migrar(o){
+  if(o.kineV || !o.procedimientos || !o.procedimientos.length) return false;
+  if(!o.kineCats || !o.kineCats.length) o.kineCats = clone(KCATS_DEF);
+  for(const nom of ['LIFTING CERVICAL','LIFTING FACIAL / TERCIO MEDIO','LIFTING FRONTAL'])
+    if(!o.procedimientos.some(p=>norm(p.nombre)===norm(nom))) o.procedimientos.push({id:uid('p'), nombre:nom, grupos:[], fija:'', estado:'pendiente'});
+  o.procedimientos.forEach(p=>{ if(!p.kine) p.kine = kineDefault(p.nombre); });
+  o.procedimientos.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+  o.kineV = 1; return true;
+}
+function kineDe(p){
+  const k=p.kine;
+  if(!k || k.estado==='pendiente') return {estado:'pendiente'};
+  if(k.estado==='ninguna') return {estado:'ninguna'};
+  const cat=D.kineCats.find(c=>c.id===k.cat); if(!cat) return {estado:'pendiente'};
+  const valor = k.valor || cat.valor;
+  return {estado:'ok', cat, ses:k.ses, valor, especial:!!k.valor, total:valor*k.ses, nota:k.nota||'', alt:(k.alt||[]).map(a=>({...a, total:a.ses*a.valor}))};
+}
 let D, selDoc = null, selProc = null, tMode = 'dur', editProc = null;
 
 const $ = s => document.querySelector(s);
@@ -335,13 +386,13 @@ async function fetchRemote(){
   const {data,error}=await sb.from('guia').select('datos,version,actualizado,actualizado_por').eq('id',1).maybeSingle();
   if(error) throw error; return data;
 }
-function aplicarRemoto(r){ D = r ? completar(r.datos) : VACIO(); VER = r ? r.version : 0; dirty=false; cacheSet(); sortDocs(); }
+function aplicarRemoto(r){ D = r ? completar(r.datos) : VACIO(); VER = r ? r.version : 0; dirty=false; const m=migrar(D); cacheSet(); sortDocs(); return m; }
 async function cargar(){
   setStatus('loading');
-  try{ aplicarRemoto(await fetchRemote()); setStatus('ok'); }
+  try{ const mig=aplicarRemoto(await fetchRemote()); setStatus('ok'); if(mig) save('Se agregaron los datos de kinesiología'); }
   catch(e){
     const c=cacheGet();
-    if(c){ D=completar(c.D); VER=c.VER; dirty=!!c.dirty; sortDocs(); setStatus('offline'); if(dirty) programarReintento(); }
+    if(c){ D=completar(c.D); if(migrar(D)) c.dirty=true; VER=c.VER; dirty=!!c.dirty; sortDocs(); setStatus('offline'); if(dirty) programarReintento(); }
     else { D=VACIO(); setStatus('error'); toast('No se pudo conectar. Revisa internet.'); }
   }
   renderAll();
@@ -447,6 +498,14 @@ function renderResult(){
   if (pr.estado==='ninguna') prHtml = '<span class="tag none">No usa prenda</span>';
   else if (pr.estado==='pendiente' && !pr.items.length) prHtml = '<span class="tag pend">Sin dato</span>';
   else prHtml = `<div class="chips">${pr.items.map(i=>`<span class="chip">${esc(i)}</span>`).join('')}</div>` + (pr.faltan.length? `<div style="margin-top:8px"><span class="tag pend">Falta dato: ${esc(pr.faltan.join(', '))}</span></div>`:'');
+  const kn = kineDe(proc);
+  let kHtml;
+  if(kn.estado==='ninguna') kHtml='<div style="margin-top:6px"><span class="tag none">No lleva</span></div>';
+  else if(kn.estado==='pendiente') kHtml='<div style="margin-top:6px"><span class="tag pend">Sin dato</span></div>';
+  else kHtml = `<div class="v">${money(kn.total)}</div>
+      <div class="kd">${esc(kn.cat.nombre)} · ${kn.ses} sesiones de ${kn.cat.min} min × ${money(kn.valor)}${kn.especial?' (precio especial)':''}</div>
+      ${kn.nota?`<div class="kd"><b>${esc(kn.nota)}</b></div>`:''}
+      ${kn.alt.map(a=>`<div class="kalt">${esc(a.nombre)}: ${a.ses} sesiones × ${money(a.valor)} = <b>${money(a.total)}</b></div>`).join('')}`;
   // comparación
   const rows = D.doctores.map(d=>({d, v:(D.duraciones[proc.id]||{})[d.id]||''}));
   // el doctor elegido primero; el resto de menor a mayor duración (sin dato al final)
@@ -459,6 +518,7 @@ function renderResult(){
     <div class="big">
       <div class="stat"><div class="k">Duración estimada</div><div class="v">${dur?fmtDur(dur):'<span class="tag pend" style="font-size:16px">Sin dato</span>'}</div></div>
       <div class="stat"><div class="k">Prendas postoperatorias</div><div style="margin-top:6px">${prHtml}</div></div>
+      <div class="stat"><div class="k">Kinesiología</div>${kHtml}</div>
     </div>
     <h3>Duración con otros doctores (de menor a mayor)</h3>
     <table class="cmp">${cmp}</table>`;
@@ -477,6 +537,27 @@ function renderTable(){
         const v=(D.duraciones[p.id]||{})[d.id]||'';
         return ed ? `<td><input data-p="${p.id}" data-d="${d.id}" value="${v}" placeholder="—"></td>` : `<td class="${v?'':'na'}">${v||'—'}</td>`;
       }).join('')}</tr>`).join('') + '</tbody></table>';
+  } else if (tMode==='kin'){
+    $('#tHint').textContent = ed ? 'Valor especial: déjalo vacío para usar el valor de la categoría. Las otras opciones (ej: Bono PAD) se editan en Administrar.' : '';
+    const ps = D.procedimientos.filter(p=>!q || norm(p.nombre).includes(q));
+    const catOpts = (sel)=> D.kineCats.map(c=>`<option value="${c.id}" ${sel===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('');
+    h = `<table class="grid kin"><thead><tr><th class="rh">Procedimiento</th><th>Categoría</th><th>Min/sesión</th><th>Sesiones</th><th>Valor sesión</th><th>Total</th><th>Otras opciones</th></tr></thead><tbody>` +
+      ps.map(p=>{
+        const k=p.kine||{estado:'pendiente'}, kn=kineDe(p);
+        const altTxt = kn.estado==='ok' && kn.alt.length ? kn.alt.map(a=>`${esc(a.nombre)}: ${a.ses} × ${money(a.valor)} = ${money(a.total)}`).join('<br>') : '';
+        if(ed){
+          const sel = k.estado==='ok' ? k.cat : k.estado;
+          return `<tr><td class="rh">${esc(p.nombre)}</td>
+            <td><select data-kc="${p.id}">${catOpts(sel)}<option value="ninguna" ${sel==='ninguna'?'selected':''}>No lleva</option><option value="pendiente" ${sel==='pendiente'?'selected':''}>Sin dato</option></select></td>
+            <td class="muted">${kn.estado==='ok'?kn.cat.min:'—'}</td>
+            <td>${k.estado==='ok'?`<input data-ks="${p.id}" value="${k.ses||''}">`:'—'}</td>
+            <td>${k.estado==='ok'?`<input data-kv="${p.id}" value="${k.valor||''}" placeholder="${kn.estado==='ok'?kn.cat.valor:''}" style="width:90px">`:'—'}</td>
+            <td><b>${kn.estado==='ok'?money(kn.total):'—'}</b></td><td class="wrap">${altTxt}</td></tr>`;
+        }
+        if(kn.estado==='ninguna') return `<tr><td class="rh">${esc(p.nombre)}</td><td class="muted" colspan="6">No lleva kinesiología</td></tr>`;
+        if(kn.estado==='pendiente') return `<tr><td class="rh">${esc(p.nombre)}</td><td class="na" colspan="6">Sin dato</td></tr>`;
+        return `<tr><td class="rh">${esc(p.nombre)}</td><td>${esc(kn.cat.nombre)}</td><td>${kn.cat.min}</td><td>${kn.ses}</td><td>${money(kn.valor)}${kn.especial?' *':''}</td><td><b>${money(kn.total)}</b></td><td class="wrap">${altTxt}${kn.nota?`${altTxt?'<br>':''}<i>${esc(kn.nota)}</i>`:''}</td></tr>`;
+      }).join('') + '</tbody></table>' + (ed?'':'<p class="hint" style="padding:0 10px">* precio especial</p>');
   } else {
     $('#tHint').textContent = ed ? 'Haz clic en una celda para elegir las prendas.' : '';
     const gs = D.grupos;
@@ -490,7 +571,21 @@ function renderTable(){
   $('#tWrap').innerHTML = h;
 }
 $('#tWrap').addEventListener('change', e=>{
-  const i = e.target; if (i.tagName!=='INPUT') return;
+  const i = e.target;
+  if (i.dataset.kc || i.dataset.ks || i.dataset.kv){
+    const p = D.procedimientos.find(x=>x.id===(i.dataset.kc||i.dataset.ks||i.dataset.kv));
+    p.kine = p.kine || {estado:'pendiente'};
+    if (i.dataset.kc){
+      if (i.value==='ninguna' || i.value==='pendiente') p.kine = {...p.kine, estado:i.value};
+      else p.kine = {ses:10, valor:null, nota:'', alt:[], ...p.kine, estado:'ok', cat:i.value};
+    } else if (i.dataset.ks){
+      const n=parseInt(i.value,10); if(!(n>0)){ toast('Escribe un número de sesiones'); renderTable(); return; } p.kine.ses=n;
+    } else {
+      const v=i.value.replace(/[^\d]/g,''); p.kine.valor = v ? +v : null;
+    }
+    save('Guardado'); renderTable(); return;
+  }
+  if (i.tagName!=='INPUT') return;
   if (i.dataset.p){
     const v = parseDur(i.value);
     if (v===null){ toast('Formato no válido. Usa 2:30'); i.value=(D.duraciones[i.dataset.p]||{})[i.dataset.d]||''; return; }
@@ -515,6 +610,9 @@ function renderAdmin(){
     <button class="btn danger" data-deldoc="${d.id}" title="Eliminar">✕</button></div>`).join('');
   $('#grpList').innerHTML = D.grupos.map(g=>`<div class="it"><input type="text" class="nm" data-grp="${g.id}" value="${esc(g.nombre)}">
     <button class="btn danger" data-delgrp="${g.id}" title="Eliminar">✕</button></div>`).join('');
+  $('#kcatList').innerHTML = D.kineCats.map(c=>`<div class="kcat"><input type="text" data-kcat="${c.id}" data-f="nombre" value="${esc(c.nombre)}">
+    <input type="text" data-kcat="${c.id}" data-f="min" value="${c.min}"><input type="text" data-kcat="${c.id}" data-f="valor" value="${c.valor}">
+    <button class="btn danger" data-delkcat="${c.id}" title="Eliminar">✕</button></div>`).join('') || '<p class="hint">Sin categorías.</p>';
   $('#procSel').innerHTML = '<option value="">— Elegir para editar —</option>' + D.procedimientos.map(p=>`<option value="${p.id}" ${p.id===editProc?'selected':''}>${esc(p.nombre)}</option>`).join('');
   renderProcEdit();
 }
@@ -533,13 +631,46 @@ function renderProcEdit(){
     <div id="peGrpBox" style="${p.estado==='ok'?'':'display:none'}">
       <div class="hint">Grupos que aplican (según el doctor):</div>
       <div class="opts">${D.grupos.map(g=>`<label><input type="checkbox" class="peG" value="${g.id}" ${p.grupos.includes(g.id)?'checked':''}> ${esc(g.nombre)}</label>`).join('')}</div>
-      <div class="hint">Prenda fija para todos los doctores (opcional):</div>
+      <div class="hint">Prendas que usan todos los doctores (opcional):</div>
       <button class="pbtn ${p.fija?'':'vacio'}" id="peFija" data-v="${esc(p.fija)}" style="margin-top:6px">${esc(p.fija)||'— ninguna (clic para elegir) —'}</button>
     </div>
+    <label class="lbl" style="margin-top:16px">Kinesiología</label>
+    <div class="kform">
+      <div><div class="hint">Categoría</div><select id="peKc"></select></div>
+      <div><div class="hint">Sesiones</div><input type="text" id="peKs"></div>
+      <div><div class="hint">Valor especial</div><input type="text" id="peKv"></div>
+    </div>
+    <div class="hint" style="margin-top:8px">Nota (opcional, ej: Campaña GD)</div>
+    <input type="text" id="peKn">
+    <div class="hint" style="margin-top:8px">Otras opciones (ej: Bono PAD) — nombre, sesiones, valor por sesión:</div>
+    <div id="peKalt"></div>
+    <button class="btn" id="peKaddAlt" style="margin-top:6px">+ Agregar opción</button>
     <div class="row" style="margin-top:14px;justify-content:space-between">
       <button class="btn danger" id="peDel">Eliminar procedimiento</button>
       <button class="btn pri" id="peSave">Guardar cambios</button>
     </div></div>`;
+  const k0 = p.kine || {estado:'pendiente'};
+  let altTmp = clone(k0.alt||[]);
+  const selK = k0.estado==='ok' ? k0.cat : k0.estado;
+  $('#peKc').innerHTML = D.kineCats.map(c=>`<option value="${c.id}" ${selK===c.id?'selected':''}>${esc(c.nombre)} (${c.min} min, ${money(c.valor)})</option>`).join('') +
+    `<option value="ninguna" ${selK==='ninguna'?'selected':''}>No lleva</option><option value="pendiente" ${selK==='pendiente'?'selected':''}>Sin dato</option>`;
+  $('#peKs').value = k0.ses||''; $('#peKv').value = k0.valor||''; $('#peKn').value = k0.nota||'';
+  const kOn = ()=>{ const on=!['ninguna','pendiente'].includes($('#peKc').value); ['#peKs','#peKv','#peKn','#peKaddAlt'].forEach(s=>$(s).disabled=!on); };
+  const drawAlt = ()=>{ $('#peKalt').innerHTML = altTmp.map((a,i)=>`<div class="kalted"><input type="text" data-ai="${i}" data-af="nombre" value="${esc(a.nombre)}">
+      <input type="text" data-ai="${i}" data-af="ses" value="${a.ses}"><input type="text" data-ai="${i}" data-af="valor" value="${a.valor}">
+      <button class="btn danger" data-adel="${i}">✕</button></div>`).join(''); };
+  drawAlt(); kOn();
+  $('#peKc').onchange = kOn;
+  $('#peKaddAlt').onclick = ()=>{ altTmp.push({nombre:'Opción', ses:5, valor:30000}); drawAlt(); };
+  $('#peKalt').oninput = e=>{ const i=e.target.dataset.ai; if(i==null) return; const f=e.target.dataset.af;
+    altTmp[i][f] = f==='nombre' ? e.target.value : (parseInt(e.target.value.replace(/[^\d]/g,''),10)||0); };
+  $('#peKalt').onclick = e=>{ const b=e.target.closest('[data-adel]'); if(!b) return; altTmp.splice(+b.dataset.adel,1); drawAlt(); };
+  p._kRead = ()=>{
+    const c=$('#peKc').value;
+    if(c==='ninguna'||c==='pendiente') return {...k0, estado:c};
+    const ses=parseInt($('#peKs').value,10)||10, v=$('#peKv').value.replace(/[^\d]/g,'');
+    return {estado:'ok', cat:c, ses, valor: v?+v:null, nota:$('#peKn').value.trim(), alt: altTmp.filter(a=>a.nombre.trim() && a.ses>0 && a.valor>0)};
+  };
   document.querySelectorAll('input[name=peEst]').forEach(r=>r.onchange=()=>{ $('#peGrpBox').style.display = r.value==='ok'&&r.checked ? '' : 'none'; });
   $('#peFija').onclick = async ()=>{
     const b=$('#peFija'), v=await pickPrendas('Prenda fija — '+p.nombre, b.dataset.v); if(v===null) return;
@@ -551,6 +682,7 @@ function renderProcEdit(){
     p.estado = document.querySelector('input[name=peEst]:checked').value;
     p.grupos = [...document.querySelectorAll('.peG:checked')].map(x=>x.value);
     p.fija = $('#peFija').dataset.v;
+    if (p._kRead) p.kine = p._kRead();
     if (p.estado==='ok' && !p.grupos.length && !p.fija) p.estado='pendiente';
     sortProcs(); save('Procedimiento guardado'); renderAll();
   };
@@ -566,7 +698,7 @@ function sortProcs(){ D.procedimientos.sort((a,b)=>a.nombre.localeCompare(b.nomb
 
 $('#procSel').onchange = e=>{ editProc = e.target.value||null; renderProcEdit(); };
 $('#newProc').onclick = ()=>{
-  const p = {id:uid('p'), nombre:'NUEVO PROCEDIMIENTO', grupos:[], fija:'', estado:'pendiente'};
+  const p = {id:uid('p'), nombre:'NUEVO PROCEDIMIENTO', grupos:[], fija:'', estado:'pendiente', kine:{estado:'pendiente'}};
   D.procedimientos.push(p); sortProcs(); editProc=p.id; save(); renderAll();
   setTimeout(()=>{ const i=$('#peName'); i.focus(); i.select(); },0);
 };
@@ -578,13 +710,27 @@ $('#addGrp').onclick = ()=>{
   const n = $('#newGrp').value.trim(); if(!n) return;
   const id = uid('g'); D.grupos.push({id, nombre:n}); D.prendas[id]={}; $('#newGrp').value=''; save('Grupo agregado'); renderAll();
 };
+$('#addKcat').onclick = ()=>{ D.kineCats.push({id:uid('k'), nombre:'Nueva', min:60, valor:50000}); save('Categoría agregada'); renderAll(); };
 $('#v-admin').addEventListener('change', e=>{
   const t=e.target;
+  if (t.dataset.kcat){
+    const c=D.kineCats.find(x=>x.id===t.dataset.kcat), f=t.dataset.f;
+    if (f==='nombre'){ if(t.value.trim()) c.nombre=t.value.trim(); }
+    else { const n=parseInt(t.value.replace(/[^\d]/g,''),10); if(n>0) c[f]=n; }
+    save('Guardado'); renderAll(); return;
+  }
   if (t.dataset.doc){ const d=D.doctores.find(x=>x.id===t.dataset.doc); if(t.value.trim()){ d.nombre=t.value.trim(); sortDocs(); save('Guardado'); } renderAll(); }
   if (t.dataset.grp){ const g=D.grupos.find(x=>x.id===t.dataset.grp); if(t.value.trim()){ g.nombre=t.value.trim(); save('Guardado'); } }
 });
 $('#v-admin').addEventListener('click', async e=>{
   const t=e.target.closest('button'); if(!t) return;
+  if (t.dataset.delkcat){
+    const c=D.kineCats.find(x=>x.id===t.dataset.delkcat);
+    const usan=D.procedimientos.filter(p=>p.kine&&p.kine.estado==='ok'&&p.kine.cat===c.id).length;
+    if(usan){ infoBox(`No se puede eliminar "${c.nombre}": la usan ${usan} procedimiento(s). Cámbialos de categoría primero.`); return; }
+    if(!await confirmBox(`¿Eliminar la categoría "${c.nombre}"?`)) return;
+    D.kineCats=D.kineCats.filter(x=>x.id!==c.id); save('Eliminada'); renderAll(); return;
+  }
   if (t.dataset.deldoc){
     const d=D.doctores.find(x=>x.id===t.dataset.deldoc);
     if (!await confirmBox(`¿Eliminar a ${d.nombre}? Se borran sus duraciones y prendas.`)) return;
@@ -751,7 +897,7 @@ $('#txLoad').onclick = async ()=>{
     const o=JSON.parse($('#txIn').value.trim());
     if(!o.doctores||!o.procedimientos||!o.duraciones||!o.prendas||!o.grupos) throw 0;
     if(!await confirmBox('¿Reemplazar todos los datos actuales por los del respaldo pegado?')) return;
-    D=o; sortDocs(); selDoc=selProc=editProc=null; $('#txIn').value=''; save('Respaldo cargado'); renderAll();
+    D=completar(o); migrar(D); sortDocs(); selDoc=selProc=editProc=null; $('#txIn').value=''; save('Respaldo cargado'); renderAll();
   }catch(_){ toast('El texto no es un respaldo válido'); }
 };
 $('#imp').onchange = async e=>{
@@ -760,7 +906,7 @@ $('#imp').onchange = async e=>{
     const o=JSON.parse(await f.text());
     if(!o.doctores||!o.procedimientos||!o.duraciones||!o.prendas||!o.grupos) throw 0;
     if(!await confirmBox('¿Reemplazar todos los datos actuales por los del respaldo?')) return;
-    D=o; sortDocs(); selDoc=selProc=editProc=null; save('Respaldo cargado'); renderAll();
+    D=completar(o); migrar(D); sortDocs(); selDoc=selProc=editProc=null; save('Respaldo cargado'); renderAll();
   }catch(_){ toast('El archivo no es un respaldo válido'); }
   e.target.value='';
 };
@@ -776,7 +922,7 @@ $('#hList').onclick = async e=>{
   const b=e.target.closest('button[data-h]'); if(!b) return;
   const h=HIST[+b.dataset.h];
   if(!await confirmBox(`¿Volver a la versión ${h.version??''} del ${new Date(h.guardado).toLocaleString('es-CL')}? La versión actual queda respaldada en el historial.`)) return;
-  D=completar(clone(h.datos)); sortDocs(); selDoc=selProc=editProc=null; save('Versión restaurada'); renderAll();
+  D=completar(clone(h.datos)); migrar(D); sortDocs(); selDoc=selProc=editProc=null; save('Versión restaurada'); renderAll();
 };
 
 /* ---------- SESIÓN ---------- */
